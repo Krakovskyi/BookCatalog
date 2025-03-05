@@ -1,0 +1,128 @@
+@page "/books/import"
+@using BookCatalog.Client.Services
+@using System.IO
+@inject BookService BookService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Импорт книг из CSV</PageTitle>
+
+<div class="container">
+    <div class="card">
+        <div class="card-header">
+            <h1>Импорт книг из CSV</h1>
+        </div>
+        <div class="card-body">
+            <div class="alert alert-info">
+                <h4>Инструкция</h4>
+                <p>Загрузите CSV файл со списком книг. Файл должен содержать следующие колонки:</p>
+                <ul>
+                    <li><strong>Title</strong> - название книги (обязательно)</li>
+                    <li><strong>Author</strong> - автор книги (обязательно)</li>
+                    <li><strong>Genre</strong> - жанр книги (обязательно)</li>
+                    <li><strong>Description</strong> - описание книги (опционально)</li>
+                    <li><strong>PublicationYear</strong> - год публикации (опционально)</li>
+                    <li><strong>ISBN</strong> - ISBN книги (опционально)</li>
+                </ul>
+                <p>Пример содержимого CSV файла:</p>
+                <pre>Title,Author,Genre,Description,PublicationYear,ISBN
+Война и мир,Лев Толстой,Роман-эпопея,Описание книги,1869,978-5-389-06556-7
+Преступление и наказание,Фёдор Достоевский,Роман,Описание книги,1866,978-5-17-085554-1</pre>
+            </div>
+
+            <div class="mb-3">
+                <InputFile OnChange="@LoadFiles" class="form-control" accept=".csv" />
+                <div class="form-text">Выберите CSV файл для импорта</div>
+            </div>
+
+            @if (!string.IsNullOrEmpty(message))
+            {
+                <div class="alert @(isError ? "alert-danger" : "alert-success")">
+                    @message
+                </div>
+            }
+
+            <div class="mt-3">
+                <button class="btn btn-primary" @onclick="ImportBooks" disabled="@(selectedFile == null || importing)">
+                    @if (importing)
+                    {
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span> Импортирую...</span>
+                    }
+                    else
+                    {
+                        <span class="oi oi-data-transfer-upload" aria-hidden="true"></span>
+                        <span> Импортировать</span>
+                    }
+                </button>
+                <button class="btn btn-secondary" @onclick="@(() => NavigationManager.NavigateTo("books"))">
+                    <span class="oi oi-arrow-left" aria-hidden="true"></span> Вернуться к списку
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private IBrowserFile? selectedFile;
+    private string message = string.Empty;
+    private bool isError = false;
+    private bool importing = false;
+
+    private void LoadFiles(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+        message = string.Empty;
+    }
+
+    private async Task ImportBooks()
+    {
+        if (selectedFile == null)
+        {
+            message = "Выберите файл для импорта";
+            isError = true;
+            return;
+        }
+
+        if (!selectedFile.Name.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+        {
+            message = "Выбранный файл должен быть в формате CSV";
+            isError = true;
+            return;
+        }
+
+        importing = true;
+        isError = false;
+        message = "Импортирую книги...";
+
+        try
+        {
+            // Ограничиваем размер файла до 10 МБ
+            var maxFileSize = 10 * 1024 * 1024;
+            if (selectedFile.Size > maxFileSize)
+            {
+                message = "Размер файла превышает 10 МБ";
+                isError = true;
+                return;
+            }
+
+            using var stream = selectedFile.OpenReadStream(maxFileSize);
+            using var memoryStream = new MemoryStream();
+            await stream.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+
+            var result = await BookService.ImportBooksFromCsvAsync(memoryStream, selectedFile.Name);
+            message = result;
+            isError = result.StartsWith("Error");
+        }
+        catch (Exception ex)
+        {
+            message = $"Ошибка при импорте: {ex.Message}";
+            isError = true;
+        }
+        finally
+        {
+            importing = false;
+        }
+    }
+} 

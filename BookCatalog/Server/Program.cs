@@ -1,11 +1,23 @@
+using BookCatalog.Server.Services;
 using Microsoft.AspNetCore.ResponseCompression;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-
+builder.Services.AddSingleton<BookService>();
 builder.Services.AddControllersWithViews();
 builder.Services.AddRazorPages();
+
+// Добавляем CORS
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
 
 var app = builder.Build();
 
@@ -28,6 +40,8 @@ app.UseStaticFiles();
 
 app.UseRouting();
 
+// Используем CORS
+app.UseCors("AllowAll");
 
 app.MapRazorPages();
 app.MapControllers();

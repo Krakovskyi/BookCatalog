@@ -1,0 +1,177 @@
+@page "/books/add"
+@page "/books/edit/{Id:int}"
+@using BookCatalog.Client.Services
+@using BookCatalog.Shared
+@inject BookService BookService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>@(Id == null ? "Добавление книги" : "Редактирование книги")</PageTitle>
+
+<div class="container">
+    <div class="card">
+        <div class="card-header">
+            <h1>@(Id == null ? "Добавление книги" : "Редактирование книги")</h1>
+        </div>
+        <div class="card-body">
+            @if (loading)
+            {
+                <div class="d-flex justify-content-center">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Загрузка...</span>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <EditForm Model="@book" OnValidSubmit="HandleValidSubmit">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary />
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="title">Название</label>
+                                <InputText id="title" @bind-Value="book.Title" class="form-control" />
+                                <ValidationMessage For="@(() => book.Title)" />
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="author">Автор</label>
+                                <InputText id="author" @bind-Value="book.Author" class="form-control" />
+                                <ValidationMessage For="@(() => book.Author)" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="genre">Жанр</label>
+                                <InputText id="genre" @bind-Value="book.Genre" class="form-control" />
+                                <ValidationMessage For="@(() => book.Genre)" />
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="year">Год публикации</label>
+                                <InputNumber id="year" @bind-Value="book.PublicationYear" class="form-control" />
+                                <ValidationMessage For="@(() => book.PublicationYear)" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group mb-3">
+                        <label for="isbn">ISBN</label>
+                        <InputText id="isbn" @bind-Value="book.ISBN" class="form-control" />
+                        <ValidationMessage For="@(() => book.ISBN)" />
+                    </div>
+
+                    <div class="form-group mb-3">
+                        <label for="description">Описание</label>
+                        <InputTextArea id="description" @bind-Value="book.Description" class="form-control" rows="5" />
+                        <ValidationMessage For="@(() => book.Description)" />
+                    </div>
+
+                    <div class="form-group">
+                        <button type="submit" class="btn btn-primary">
+                            <span class="oi oi-check" aria-hidden="true"></span> Сохранить
+                        </button>
+                        <button type="button" class="btn btn-secondary" @onclick="NavigateToBookList">
+                            <span class="oi oi-x" aria-hidden="true"></span> Отмена
+                        </button>
+                    </div>
+                </EditForm>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public int? Id { get; set; }
+
+    private Book book = new();
+    private bool loading = true;
+    private bool isNewBook => Id == null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBook();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadBook();
+    }
+
+    private async Task LoadBook()
+    {
+        loading = true;
+        try
+        {
+            if (isNewBook)
+            {
+                book = new Book();
+            }
+            else if (Id.HasValue)
+            {
+                var loadedBook = await BookService.GetBookByIdAsync(Id.Value);
+                if (loadedBook != null)
+                {
+                    book = loadedBook;
+                }
+                else
+                {
+                    await JSRuntime.InvokeVoidAsync("alert", "Книга не найдена");
+                    NavigationManager.NavigateTo("books");
+                }
+            }
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private void NavigateToBookList()
+    {
+        NavigationManager.NavigateTo("books");
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        try
+        {
+            if (isNewBook)
+            {
+                var addedBook = await BookService.AddBookAsync(book);
+                if (addedBook != null)
+                {
+                    NavigationManager.NavigateTo($"books/{addedBook.Id}");
+                }
+                else
+                {
+                    await JSRuntime.InvokeVoidAsync("alert", "Не удалось добавить книгу");
+                }
+            }
+            else if (Id.HasValue)
+            {
+                var success = await BookService.UpdateBookAsync(Id.Value, book);
+                if (success)
+                {
+                    NavigationManager.NavigateTo($"books/{Id}");
+                }
+                else
+                {
+                    await JSRuntime.InvokeVoidAsync("alert", "Не удалось обновить книгу");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Ошибка: {ex.Message}");
+        }
+    }
+} 

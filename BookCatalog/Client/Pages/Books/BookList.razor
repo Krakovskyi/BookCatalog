@@ -1,0 +1,317 @@
+@page "/books"
+@using BookCatalog.Client.Services
+@using BookCatalog.Shared
+@inject BookService BookService
+@inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
+
+<PageTitle>Каталог книг</PageTitle>
+
+<div class="container">
+    <h1>Каталог книг</h1>
+
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="input-group">
+                <input type="text" class="form-control" placeholder="Поиск по названию, автору..." 
+                       @bind="searchTerm" @bind:event="oninput" @onkeyup="HandleSearch" />
+                <button class="btn btn-primary" @onclick="Search">
+                    <span class="oi oi-magnifying-glass" aria-hidden="true"></span> Поиск
+                </button>
+            </div>
+        </div>
+        <div class="col-md-6 text-end">
+            <button class="btn btn-success" @onclick="NavigateToAdd">
+                <span class="oi oi-plus" aria-hidden="true"></span> Добавить книгу
+            </button>
+            <button class="btn btn-info ms-2" @onclick="NavigateToImport">
+                <span class="oi oi-data-transfer-upload" aria-hidden="true"></span> Импорт из CSV
+            </button>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="form-group">
+                <label>Автор</label>
+                <select class="form-select" @bind="selectedAuthor">
+                    <option value="">Все авторы</option>
+                    @foreach (var author in authors)
+                    {
+                        <option value="@author">@author</option>
+                    }
+                </select>
+                <button class="btn btn-sm btn-outline-secondary mt-2" @onclick="FilterByAuthor">Применить</button>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="form-group">
+                <label>Жанр</label>
+                <select class="form-select" @bind="selectedGenre">
+                    <option value="">Все жанры</option>
+                    @foreach (var genre in genres)
+                    {
+                        <option value="@genre">@genre</option>
+                    }
+                </select>
+                <button class="btn btn-sm btn-outline-secondary mt-2" @onclick="FilterByGenre">Применить</button>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="form-group">
+                <label>Сортировка</label>
+                <div class="input-group">
+                    <select class="form-select" @bind="sortBy">
+                        <option value="Title">Название</option>
+                        <option value="Author">Автор</option>
+                        <option value="Genre">Жанр</option>
+                        <option value="Year">Год публикации</option>
+                        <option value="CreatedAt">Дата добавления</option>
+                    </select>
+                    <button class="btn @(sortAscending ? "btn-outline-secondary" : "btn-secondary")" @onclick="ToggleSortDirection">
+                        <span class="oi @(sortAscending ? "oi-sort-ascending" : "oi-sort-descending")" aria-hidden="true"></span>
+                    </button>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary mt-2" @onclick="ApplySorting">Применить</button>
+            </div>
+        </div>
+    </div>
+
+    @if (loading)
+    {
+        <div class="d-flex justify-content-center">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Загрузка...</span>
+            </div>
+        </div>
+    }
+    else if (books.Count == 0)
+    {
+        <div class="alert alert-info">
+            <span class="oi oi-info" aria-hidden="true"></span> Книги не найдены.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Название</th>
+                        <th>Автор</th>
+                        <th>Жанр</th>
+                        <th>Год</th>
+                        <th>ISBN</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var book in books)
+                    {
+                        <tr>
+                            <td>@book.Title</td>
+                            <td>@book.Author</td>
+                            <td>@book.Genre</td>
+                            <td>@(book.PublicationYear?.ToString() ?? "-")</td>
+                            <td>@book.ISBN</td>
+                            <td>
+                                <div class="btn-group">
+                                    <button class="btn btn-sm btn-info" @onclick="() => ViewBook(book.Id)">
+                                        <span class="oi oi-eye" aria-hidden="true"></span>
+                                    </button>
+                                    <button class="btn btn-sm btn-primary" @onclick="() => EditBook(book.Id)">
+                                        <span class="oi oi-pencil" aria-hidden="true"></span>
+                                    </button>
+                                    <button class="btn btn-sm btn-danger" @onclick="() => DeleteBook(book.Id)">
+                                        <span class="oi oi-trash" aria-hidden="true"></span>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                Показано @books.Count из @totalCount книг
+            </div>
+            <div>
+                <nav aria-label="Page navigation">
+                    <ul class="pagination">
+                        <li class="page-item @(currentPage == 1 ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(currentPage - 1)" disabled="@(currentPage == 1)">
+                                <span aria-hidden="true">&laquo;</span>
+                            </button>
+                        </li>
+                        @for (int i = 1; i <= pageCount; i++)
+                        {
+                            var pageNumber = i;
+                            <li class="page-item @(pageNumber == currentPage ? "active" : "")">
+                                <button class="page-link" @onclick="() => GoToPage(pageNumber)">@pageNumber</button>
+                            </li>
+                        }
+                        <li class="page-item @(currentPage == pageCount ? "disabled" : "")">
+                            <button class="page-link" @onclick="() => GoToPage(currentPage + 1)" disabled="@(currentPage == pageCount)">
+                                <span aria-hidden="true">&raquo;</span>
+                            </button>
+                        </li>
+                    </ul>
+                </nav>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private List<Book> books = new();
+    private List<string> authors = new();
+    private List<string> genres = new();
+    private int currentPage = 1;
+    private int pageSize = 10;
+    private int totalCount;
+    private int pageCount;
+    private bool loading = true;
+    private string searchTerm = string.Empty;
+    private string selectedAuthor = string.Empty;
+    private string selectedGenre = string.Empty;
+    private string sortBy = "Title";
+    private bool sortAscending = true;
+    private Timer? debounceTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        await LoadFilters();
+    }
+
+    private async Task LoadData()
+    {
+        loading = true;
+        try
+        {
+            var query = new BookQuery
+            {
+                Page = currentPage,
+                PageSize = pageSize,
+                SearchTerm = searchTerm,
+                Author = selectedAuthor,
+                Genre = selectedGenre,
+                SortBy = sortBy,
+                SortAscending = sortAscending
+            };
+
+            var result = await BookService.GetBooksAsync(query);
+            books = result.Items;
+            totalCount = result.TotalCount;
+            pageCount = result.PageCount;
+            
+            // Если текущая страница больше, чем количество страниц, переходим на последнюю страницу
+            if (currentPage > pageCount && pageCount > 0)
+            {
+                currentPage = pageCount;
+                await LoadData();
+            }
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task LoadFilters()
+    {
+        authors = await BookService.GetAuthorsAsync();
+        genres = await BookService.GetGenresAsync();
+    }
+
+    private async Task Search()
+    {
+        currentPage = 1;
+        await LoadData();
+    }
+
+    private void HandleSearch(KeyboardEventArgs e)
+    {
+        // Используем debounce для поиска
+        debounceTimer?.Dispose();
+        debounceTimer = new Timer(async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                currentPage = 1;
+                await LoadData();
+                StateHasChanged();
+            });
+        }, null, 500, Timeout.Infinite);
+    }
+
+    private async Task FilterByAuthor()
+    {
+        currentPage = 1;
+        await LoadData();
+    }
+
+    private async Task FilterByGenre()
+    {
+        currentPage = 1;
+        await LoadData();
+    }
+
+    private async Task ApplySorting()
+    {
+        await LoadData();
+    }
+
+    private async Task ToggleSortDirection()
+    {
+        sortAscending = !sortAscending;
+        await LoadData();
+    }
+
+    private async Task GoToPage(int page)
+    {
+        if (page < 1 || page > pageCount)
+            return;
+
+        currentPage = page;
+        await LoadData();
+    }
+
+    private void ViewBook(int id)
+    {
+        NavigationManager.NavigateTo($"books/{id}");
+    }
+
+    private void EditBook(int id)
+    {
+        NavigationManager.NavigateTo($"books/edit/{id}");
+    }
+
+    private async Task DeleteBook(int id)
+    {
+        if (await JSRuntime.InvokeAsync<bool>("confirm", "Вы уверены, что хотите удалить эту книгу?"))
+        {
+            var success = await BookService.DeleteBookAsync(id);
+            if (success)
+            {
+                await LoadData();
+            }
+            else
+            {
+                await JSRuntime.InvokeVoidAsync("alert", "Не удалось удалить книгу.");
+            }
+        }
+    }
+
+    private void NavigateToAdd()
+    {
+        NavigationManager.NavigateTo("books/add");
+    }
+    
+    private void NavigateToImport()
+    {
+        NavigationManager.NavigateTo("books/import");
+    }
+} 
